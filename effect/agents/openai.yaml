@@ -1,0 +1,4 @@
+interface:
+  display_name: "EffectTS"
+  short_description: "Build, debug, and review Effect-TS 4.x code"
+  default_prompt: "Use $effect to build a production-grade Effect service with canonical 6-step pattern"
