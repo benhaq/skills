@@ -2,12 +2,12 @@
 
 Execute each check. Aggregate findings into the report format from `references/code-review.md`.
 
-**Tool priority:** Always try CLI tools (`bunx @effect/language-service diagnostics/overview/layerinfo`) first. They give structured, zero-false-positive output. Only fall back to Grep when the CLI is unavailable or can't detect a specific pattern.
+**Tool priority:** Always try the CLI directly with `NODE_PATH` pointing at project node_modules first — this avoids the bunx cache issue where typescript isn't available. Use the full project scan for best coverage.
 
 ## Step 0: Check CLI Availability
 
 ```
-Bash tool: bunx @effect/language-service --version 2>&1
+Bash tool: NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js --version 2>&1
 ```
 
 - If version prints → proceed with CLI-first checks below
@@ -31,7 +31,7 @@ Determine which files to review:
 ## Check 1: Effect Diagnostics
 
 ```
-Bash tool: bunx @effect/language-service diagnostics --project tsconfig.json --format json --severity error,warning,message 2>&1
+Bash tool: NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json 2>&1
 ```
 
 Parse JSON. Group by file. Record each: {file, line, severity, code, message}.
@@ -42,7 +42,7 @@ This catches 70+ Effect-specific issues with zero false positives.
 **ALWAYS try the CLI overview first** — it gives structured output with zero false positives:
 
 ```
-Bash tool: bunx @effect/language-service overview --project tsconfig.json 2>&1
+Bash tool: NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js overview --project tsconfig.json 2>&1
 ```
 
 The overview lists all Effect exports: services, layers, facades.

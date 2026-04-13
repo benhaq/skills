@@ -5,7 +5,7 @@ Execute these steps after generating or modifying Effect code.
 ## Step 0: Check CLI Availability
 
 ```
-Bash tool: bunx @effect/language-service --version 2>&1
+Bash tool: NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js --version 2>&1
 ```
 
 - If version prints → proceed to Step 1
@@ -21,7 +21,7 @@ Then skip to Step 3b (manual fallback) instead of Steps 1-2.
 ## Step 1: Run Effect Diagnostics
 
 ```
-Bash tool: bunx @effect/language-service diagnostics --file FILE_PATH --format json 2>&1
+Bash tool: NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics --file FILE_PATH 2>&1
 ```
 
 Parse the JSON output. Each entry has: file, line, column, severity, message, code.
@@ -34,7 +34,7 @@ Parse the JSON output. Each entry has: file, line, column, severity, message, co
 For each diagnostic with severity error or warning:
 
 ```
-Bash tool: bunx @effect/language-service quickfixes --file FILE_PATH --code DIAGNOSTIC_CODE 2>&1
+Bash tool: NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js quickfixes --file FILE_PATH --code DIAGNOSTIC_CODE 2>&1
 ```
 
 The CLI outputs proposed code changes. Apply them using the Edit tool.

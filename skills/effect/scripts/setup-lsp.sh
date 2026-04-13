@@ -20,7 +20,7 @@ if (!tc.compilerOptions.plugins.some(p => p.name === '@effect/language-service')
 "
 
 # Patch tsc for build-time Effect diagnostics
-bunx @effect/language-service patch
+NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js patch
 echo "Patched tsc for build-time Effect diagnostics"
 
 # Add prepare script to package.json if not present
@@ -30,8 +30,8 @@ const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
 pkg.scripts = pkg.scripts || {};
 if (!pkg.scripts.prepare || !pkg.scripts.prepare.includes('effect-language-service')) {
   pkg.scripts.prepare = pkg.scripts.prepare
-    ? pkg.scripts.prepare + ' && bunx @effect/language-service patch'
-    : 'bunx @effect/language-service patch';
+    ? pkg.scripts.prepare + ' && NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js patch'
+    : 'NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js patch';
   fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
   console.log('Added effect-language-service patch to prepare script');
 } else {
