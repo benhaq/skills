@@ -48,9 +48,21 @@ Require stack:
 ```
 The `@effect/language-service` package internally requires TypeScript's tsserverlibrary. bunx installs only the target package to a temp cache — typescript isn't there. Setting `NODE_PATH=./node_modules` tells Node where to find it.
 
+**Correct usage:**
+
+```bash
+# Full project scan (recommended) — --project flag resolves TS correctly
+NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json
+
+# Single file — also requires --project for TS resolution
+NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics --file FILE --project tsconfig.json
+```
+
 **Shell alias for convenience:**
 ```bash
 alias effect-diags="NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics"
+# Usage: effect-diags --project tsconfig.json
+#        effect-diags --file src/service.ts --project tsconfig.json
 ```
 
 **Preflight health check:**

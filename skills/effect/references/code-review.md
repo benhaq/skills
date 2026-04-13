@@ -72,15 +72,19 @@ Each check produces findings at three severity levels:
 Run diagnostics and categorize:
 
 ```bash
-# Standard form — uses project node_modules (recommended)
-NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics --file FILE --format json
+# Full project scan (recommended) — --project flag is required for TS resolution
+NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json
+
+# Single file — also requires --project flag
+NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics --file FILE --project tsconfig.json
 
 # If @effect/language-service is installed globally (check with: command -v effect-language-service)
-effect-language-service diagnostics --file FILE --format json
+effect-language-service diagnostics --project tsconfig.json
 
 # With shell alias (add to profile):
 # alias effect-diags="NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics"
-# effect-diags --file FILE --format json
+# effect-diags --project tsconfig.json
+#        effect-diags --file FILE --project tsconfig.json
 ```
 
 | Diagnostic | Severity | Meaning |

@@ -2,12 +2,16 @@
 
 **CLI quick reference:**
 ```bash
-# Diagnostics (70+ Effect checks) — use NODE_PATH so Node finds typescript
-NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics --file src/x.ts --format json
+# Diagnostics (70+ Effect checks) — requires --project flag for TS resolution
+# Full project scan (recommended):
+NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json
+
+# Single file:
+NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics --file src/x.ts --project tsconfig.json
 
 # Or with shell alias:
 # alias effect-diags="NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics"
-# effect-diags --file src/x.ts --format json
+# effect-diags --project tsconfig.json
 
 # Auto-fix suggestions
 NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js quickfixes --file src/x.ts --code floatingEffect
@@ -25,8 +29,8 @@ NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js cod
 NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js setup
 ```
 
-> **Important:** Always use `NODE_PATH=./node_modules` when running the CLI directly. Without it, bunx/node resolves the package in a temp cache that lacks typescript — causing `Cannot find module 'typescript/lib/tsserverlibrary'` errors.
-> 
+> **Important:** Always use `NODE_PATH=./node_modules` AND `--project tsconfig.json` when running the CLI directly. Without `--project`, TypeScript's module resolution doesn't know where to find `typescript/lib/tsserverlibrary` — causing `Cannot find module 'typescript/lib/tsserverlibrary'`. The `--project` flag enables proper TS resolution from your project.
+>
 > **Verification loop:** After running diagnostics, re-verify with `bun tsc --noEmit` and `bun test` before presenting results.
 
 ## Quick Index
@@ -399,7 +403,7 @@ NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js cod
 When generating or modifying Effect code, follow this cycle:
 
 1. **Write** — generate the code
-2. **Diagnostics** — run `NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics --file FILE --format json`
+2. **Diagnostics** — run `NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json`
 3. **Fix** — resolve any reported issues using the diagnostic-to-fix map above
 4. **Re-verify diagnostics** — confirm zero remaining diagnostics
 5. **Typecheck** — run `bun tsc --noEmit` to confirm type correctness
