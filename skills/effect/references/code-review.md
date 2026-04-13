@@ -69,7 +69,19 @@ Each check produces findings at three severity levels:
 **Source:** `@effect/language-service` plugin diagnostics
 **Reference:** See `references/lsp-integration.md` for full setup and severity mapping.
 
-Run `bunx @effect/language-service diagnostics --file FILE --format json` and categorize:
+Run diagnostics and categorize:
+
+```bash
+# Standard form — uses project node_modules (recommended)
+NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics --file FILE --format json
+
+# If @effect/language-service is installed globally (check with: command -v effect-language-service)
+effect-language-service diagnostics --file FILE --format json
+
+# With shell alias (add to profile):
+# alias effect-diags="NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics"
+# effect-diags --file FILE --format json
+```
 
 | Diagnostic | Severity | Meaning |
 |-----------|----------|---------|

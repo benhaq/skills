@@ -31,11 +31,26 @@ command -v effect-language-service && effect-language-service diagnostics --proj
 
 # 2. Package manager exec (respects lockfile)
 [ -f pnpm-lock.yaml ] && pnpm exec @effect/language-service diagnostics --project tsconfig.json --format json && exit
-[ -f bun.lock ] && bun node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json --format json && exit
+[ -f bun.lockb ] && bun node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json --format json && exit
 npm exec @effect/language-service diagnostics --project tsconfig.json --format json && exit
 
-# 3. bunx (may download, may mutate lockfile)
-bunx @effect/language-service diagnostics --project tsconfig.json --format json
+# 3. bunx with NODE_PATH workaround (bunx cache doesn't include typescript)
+# bunx alone fails: it resolves to /private/tmp/bunx-*/node_modules/ which lacks typescript
+# The fix: point Node at your project's node_modules where typescript lives
+NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json --format json
+```
+
+**Important — why bunx fails without NODE_PATH:**
+```
+Cannot find module 'typescript/lib/tsserverlibrary'
+Require stack:
+- /private/tmp/bunx-501-@effect/language-service@latest/node_modules/@effect/language-service/cli.js
+```
+The `@effect/language-service` package internally requires TypeScript's tsserverlibrary. bunx installs only the target package to a temp cache — typescript isn't there. Setting `NODE_PATH=./node_modules` tells Node where to find it.
+
+**Shell alias for convenience:**
+```bash
+alias effect-diags="NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics"
 ```
 
 **Preflight health check:**

@@ -2,25 +2,31 @@
 
 **CLI quick reference:**
 ```bash
-# Diagnostics (70+ Effect checks)
-bunx @effect/language-service diagnostics --file src/x.ts --format json
+# Diagnostics (70+ Effect checks) — use NODE_PATH so Node finds typescript
+NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics --file src/x.ts --format json
+
+# Or with shell alias:
+# alias effect-diags="NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics"
+# effect-diags --file src/x.ts --format json
 
 # Auto-fix suggestions
-bunx @effect/language-service quickfixes --file src/x.ts --code floatingEffect
+NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js quickfixes --file src/x.ts --code floatingEffect
 
 # Effect exports overview
-bunx @effect/language-service overview --project tsconfig.json
+NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js overview --project tsconfig.json
 
 # Layer dependency analysis
-bunx @effect/language-service layerinfo --file src/x.ts --name defaultLayer
+NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js layerinfo --file src/x.ts --name defaultLayer
 
 # Regenerate @effect-codegens
-bunx @effect/language-service codegen
+NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js codegen
 
 # Interactive setup
-bunx @effect/language-service setup
+NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js setup
 ```
 
+> **Important:** Always use `NODE_PATH=./node_modules` when running the CLI directly. Without it, bunx/node resolves the package in a temp cache that lacks typescript — causing `Cannot find module 'typescript/lib/tsserverlibrary'` errors.
+> 
 > **Verification loop:** After running diagnostics, re-verify with `bun tsc --noEmit` and `bun test` before presenting results.
 
 ## Quick Index
@@ -100,7 +106,7 @@ Add the plugin to your `compilerOptions.plugins` array with diagnostic severity 
 The language service runs inside tsserver (editor only). To surface diagnostics in CI:
 
 ```bash
-bunx @effect/language-service patch
+NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js patch
 ```
 
 Add a prepare script so it patches automatically after install:
@@ -380,10 +386,10 @@ Run code generation from the command line:
 
 ```bash
 # Process a single file
-bunx @effect/language-service codegens --file src/services/UserService.ts
+NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js codegens --file src/services/UserService.ts
 
 # Process the entire project
-bunx @effect/language-service codegens --project tsconfig.json
+NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js codegens --project tsconfig.json
 ```
 
 ## Agent Verification Workflow
@@ -393,7 +399,7 @@ bunx @effect/language-service codegens --project tsconfig.json
 When generating or modifying Effect code, follow this cycle:
 
 1. **Write** — generate the code
-2. **Diagnostics** — run `bunx @effect/language-service diagnostics --file FILE --format json`
+2. **Diagnostics** — run `NODE_PATH=./node_modules node ./node_modules/@effect/language-service/cli.js diagnostics --file FILE --format json`
 3. **Fix** — resolve any reported issues using the diagnostic-to-fix map above
 4. **Re-verify diagnostics** — confirm zero remaining diagnostics
 5. **Typecheck** — run `bun tsc --noEmit` to confirm type correctness
