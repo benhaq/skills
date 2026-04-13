@@ -90,9 +90,9 @@ Run `bunx @effect/language-service diagnostics --file FILE --format json` and ca
 
 ### Check 2: Service Architecture
 
-**Source:** Grep for canonical 6-step pattern (see `references/service-architecture.md`)
+**Source:** Pattern detection based on version
 
-Verify each service file implements all six steps:
+**For Effect 4.x** — verify 6-step ServiceMap pattern:
 
 | Step | What to check | Severity if missing |
 |------|-------------|-------------------|
@@ -103,18 +103,38 @@ Verify each service file implements all six steps:
 | 5. Runtime | `makeRuntime` or `ManagedRuntime.make` | Suggestion |
 | 6. Facades | `export async function` wrapping `runtime.runPromise` | Suggestion |
 
-Detection commands:
+**For Effect 3.x** — verify Effect.Service pattern:
+
+| Step | What to check | Severity if missing |
+|------|-------------|-------------------|
+| 1. Context tag | `Context.Tag<ServiceType>("service-name")` | Warning |
+| 2. Service class | `Effect.Service` with `context` tag | Warning |
+| 3. Layer | `Layer.effect(` or `Layer.sync(` | Warning |
+| 4. defaultLayer | `export const defaultLayer` | Warning |
+| 5. Runtime | `ManagedRuntime.make` | Suggestion |
+
+**Version-aware detection commands:**
 ```bash
+# v4 patterns
 rg -n "ServiceMap.Service" "$FILE"
 rg -n "Layer.effect|Layer.sync|Layer.succeed" "$FILE"
+
+# v3 patterns
+rg -n "Effect\.Service" "$FILE"
+rg -n "Context\.Tag" "$FILE"
+
+# Common
 rg -n "defaultLayer" "$FILE"
-rg -n "makeRuntime|ManagedRuntime" "$FILE"
-rg -n "export async function" "$FILE"
+rg -n "ManagedRuntime|makeRuntime" "$FILE"
 ```
+
+**Migration note for v3 codebases:** Flag `Context.Tag` usage as "v3 canonical — plan v4 migration" not as a defect.
 
 ### Check 3: Error Handling
 
 **Source:** Pattern matching on error constructs
+
+**For Effect 4.x:**
 
 | Pattern | Detection | Severity |
 |---------|----------|----------|
@@ -122,9 +142,8 @@ rg -n "export async function" "$FILE"
 | `catchAll` with generic re-throw | `catchAll` followed by `Effect.fail` without narrowing | Warning |
 | Errors not using `TaggedErrorClass` | Error classes without `Schema.TaggedErrorClass` | Warning |
 | Missing error type exports | Error classes not in barrel exports | Suggestion |
-| No per-error `catchTag` | `catchAll` where `catchTag` per variant is cleaner | Suggestion |
 
-Correct error definition:
+**Correct v4 error definition:**
 ```ts
 export class UserNotFoundError extends Schema.TaggedErrorClass<UserNotFoundError>()(
   "UserNotFoundError",
@@ -132,7 +151,27 @@ export class UserNotFoundError extends Schema.TaggedErrorClass<UserNotFoundError
 ) {}
 ```
 
-Anti-pattern:
+**For Effect 3.x:**
+
+| Pattern | Detection | Severity |
+|---------|----------|----------|
+| `throw` inside `Effect.gen` | `throw` keyword in generator body | Critical |
+| `Data.TaggedError` without Schema | Error class without `Schema` field | Warning |
+| Plain `Error` class | `class MyError extends Error` | Warning |
+| No `catchTag` usage | `catchAll` where `catchTag` per variant is cleaner | Suggestion |
+
+**Correct v3 error definition:**
+```ts
+export class UserNotFoundError extends Data.TaggedError<UserNotFoundError>("UserNotFoundError") {
+  constructor(
+    public readonly userId: string,
+  ) {
+    super()
+  }
+}
+```
+
+**Anti-pattern (both versions):**
 ```ts
 // WRONG: throw in generator
 Effect.gen(function* () {
@@ -140,6 +179,8 @@ Effect.gen(function* () {
   if (!user) throw new Error("not found")  // Bypasses error channel
 })
 ```
+
+**Migration note:** For v3 codebases, `Data.TaggedError` is canonical — flag as "v3 pattern, plan Schema.TaggedErrorClass for v4 migration", not as defect.
 
 ### Check 4: Effect Correctness
 
@@ -290,24 +331,35 @@ rg -n "Deferred.await" "$FILE"
 
 **Source:** Import statement analysis
 
-| Pattern | Detection | Severity |
-|---------|----------|----------|
-| Multiple Effect versions | Different `effect` versions in lockfile | Critical |
-| v3 `@effect/schema` import | `from "@effect/schema"` (merged into `effect` in v4) | Warning |
-| v3 `@effect/io` import | `from "@effect/io"` (removed in v4) | Warning |
-| Non-barrel imports | `from "effect/Effect"` instead of `from "effect"` | Suggestion |
+| Pattern | Detection | Severity | Version |
+|---------|----------|----------|---------|
+| Multiple Effect versions | Different `effect` versions in lockfile | Critical | Both |
+| v3 `@effect/schema` import | `from "@effect/schema"` | Warning | v4 codebase |
+| v3 `@effect/io` import | `from "@effect/io"` | Warning | v4 codebase |
+| v4 barrel import in v3 | `from "effect"` | Warning | v3 codebase |
+| Non-barrel imports | `from "effect/Effect"` | Suggestion | Both |
 
-Detection:
+**Version-aware detection:**
 ```bash
-# Multiple versions
-rg "\"effect\":" package-lock.json yarn.lock pnpm-lock.yaml | sort -u
+# Detect Effect version first
+EFFECT_VERSION=$(node -p "require('./package.json').dependencies.effect || require('./package.json').devDependencies.effect" 2>/dev/null | head -c 3)
 
-# v3 imports
-rg -rn "from \"@effect/schema\"" "$FILE"
-rg -rn "from \"@effect/io\"" "$FILE"
+# For v4 codebases — flag v3 imports
+if [ "$EFFECT_VERSION" = "4." ]; then
+  rg -rn "from \"@effect/schema\"" "$FILE"
+  rg -rn "from \"@effect/io\"" "$FILE"
+fi
 
-# Non-barrel
+# For v3 codebases — flag v4 patterns
+if [ "$EFFECT_VERSION" = "3." ]; then
+  rg -rn "from \"effect\"" "$FILE" | rg -v "from \"effect/"  # barrel imports in v3
+fi
+
+# Non-barrel imports (both versions)
 rg -rn "from \"effect/" "$FILE"
+
+# Multiple versions
+rg "\"effect\":" package-lock.json yarn.lock pnpm-lock.yaml 2>/dev/null | sort -u
 ```
 
 ### Check 12: Idiomatic Assessment
@@ -338,12 +390,42 @@ This check produces an overall idiomatic rating:
 
 ## Review Output Format
 
+### Validation Status Reporting
+
+Always include validation status with failure categorization:
+
+```markdown
+### Validation Status
+
+| Check | Tool | Status | Category |
+|-------|------|--------|----------|
+| LSP Diagnostics | effect-language-service | ⚠ Completed | Product type failure |
+| Typecheck | tsc --noEmit | ✗ Failed | Product type failure |
+| Tests | vitest run | ⚠ Skipped | Toolchain failure |
+| Lint | biome lint | ✓ Passed | — |
+
+**Categories:**
+- **Toolchain failure** — command didn't run (missing deps, broken Node/Bun)
+- **Product type failure** — command ran, code has type errors
+- **Product test failure** — command ran, tests failed
+- **External dependency unavailable** — service unavailable, skipped
+- **Migration note** — v3/v4 rule flagged for future migration, not current defect
+```
+
 ### Single File Review
 
 ```markdown
 ## Effect Code Review: `src/services/user.ts`
 
 ### Health Score: 10/12 checks passing
+
+### Validation Status
+
+| Check | Status | Detail |
+|-------|--------|--------|
+| LSP Diagnostics | ✓ Passed | 0 errors, 2 suggestions |
+| Typecheck | ✓ Passed | No type errors |
+| Tests | ⚠ Skipped | Test runner missing ICU |
 
 ### Critical (must fix)
 
@@ -366,6 +448,13 @@ This check produces an overall idiomatic rating:
 - **Line 5** — `globalFetch`: Using global `fetch`
   **Fix:** Use `HttpClient` service for testability
   **Why:** Global fetch is not interceptable in tests
+
+### Migration Notes (Effect 3.x codebase)
+
+- **Line 15** — `Effect.Service` usage detected
+  **Note:** v3 canonical pattern — plan migration to `ServiceMap.Service` for v4
+- **Line 67** — `Data.TaggedError` usage detected
+  **Note:** v3 canonical pattern — plan migration to `Schema.TaggedErrorClass` for v4
 
 ### Positive Patterns ✓
 
@@ -462,7 +551,7 @@ When comparing user code against canonical patterns:
 | File type | effect-solutions topic |
 |-----------|----------------------|
 | Service files (`*Service.ts`) | `services-and-layers` |
-| Error files, TaggedErrorClass | `error-handling` |
+| Error files, TaggedErrorClass/Data.TaggedError | `error-handling` |
 | Schema definitions | `schema-data-modeling` |
 | Test files (`*.test.ts`) | `testing` |
 | Config, Layer composition | `dependency-injection` |
@@ -477,16 +566,30 @@ effect-solutions show error-handling
 # ... for each mapped topic
 ```
 
-### Step 3: Structural Comparison
+### Step 3: Version-Aware Structural Comparison
 
-For each mapped topic, compare:
+Detect Effect version first, then compare against appropriate canonical:
+
+**For Effect 4.x:**
 
 | Aspect | Canonical | User Code | Match? |
 |--------|----------|-----------|--------|
-| Service definition | `ServiceMap.Service` | `Context.Tag` | ⚠ v3 legacy — flag unless code is explicitly maintaining v3 |
-| Error definition | `Schema.TaggedErrorClass` | `Data.TaggedError` | ⚠ Missing schema |
+| Service definition | `ServiceMap.Service` | `ServiceMap.Service` | ✓ |
+| Service definition | `ServiceMap.Service` | `Context.Tag` | ⚠ Legacy — flag as migration note |
+| Error definition | `Schema.TaggedErrorClass` | `Schema.TaggedErrorClass` | ✓ |
+| Error definition | `Schema.TaggedErrorClass` | `Data.TaggedError` | ⚠ Migration note |
 | Layer composition | `Layer.provide` pipeline | `Layer.mergeAll` only | ✓ Acceptable |
 | Test setup | `it.scoped` + mock layer | `it.effect` + real DB | ⚠ No isolation |
+
+**For Effect 3.x:**
+
+| Aspect | Canonical (v3) | User Code | Match? |
+|--------|----------------|-----------|--------|
+| Service definition | `Effect.Service` + `Context.Tag` | `Effect.Service` + `Context.Tag` | ✓ |
+| Error definition | `Data.TaggedError` | `Data.TaggedError` | ✓ |
+| Error definition | `Data.TaggedError` | `Schema.TaggedErrorClass` | ⚠ v4 pattern in v3 |
+| Brand type | `Brand.nominal` | `Brand.nominal` | ✓ |
+| Brand type | `Brand.nominal` | `Schema.brand` + `withStatics` | ⚠ v4 pattern in v3 |
 
 ### Step 4: Report Deviations
 
@@ -496,17 +599,19 @@ Only flag findings that matter:
 |----------------|----------|-------|
 | Bug or correctness issue | Critical | Always |
 | Type safety gap | Warning | Always |
+| v3 pattern in v4 codebase | Migration note | Yes, clearly labeled |
+| v4 pattern in v3 codebase | Migration note | Yes, clearly labeled |
 | Unjustified deviation from canonical | Suggestion | Yes, with rationale |
 | Project-specific adaptation with clear reason | — | Do NOT flag |
 
-Example justified adaptation (do not flag):
+**Example justified adaptation (do not flag):**
 ```ts
 // Using Context.Tag instead of ServiceMap.Service because this service
 // is consumed by a v3 library that expects the old tag shape.
 ```
 
-Example unjustified deviation (flag as suggestion):
+**Example v3 legacy pattern (flag as migration note, not defect):**
 ```ts
-// Using Context.Tag with no comment or reason
-// ServiceMap.Service is the v4 canonical pattern
+// Using Context.Tag — this is v3 canonical, plan migration to ServiceMap.Service
+// for Effect 4.x compatibility
 ```

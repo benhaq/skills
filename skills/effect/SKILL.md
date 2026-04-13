@@ -1,44 +1,74 @@
 ---
 name: effect
-description: This skill should be used when the user asks to "build a service", "add a layer", "scaffold an Effect project", "debug this error", "fix this type error", "explain Effect.gen", "why is this failing", "review this Effect code", "add error handling", or needs help with Effect-TS 4.x patterns (ServiceMap.Service, Layer.provide, Effect.fn, Schema.decodeUnknown, TaggedErrorClass, Effect.log).
+description: This skill should be used when the user asks to "build a service", "add a layer", "scaffold an Effect project", "debug this error", "fix this type error", "explain Effect.gen", "why is this failing", "review this Effect code", "add error handling", or needs help with Effect-TS patterns (ServiceMap.Service, Effect.Service, Layer.provide, Effect.fn, Schema.decodeUnknown, TaggedErrorClass, Effect.log). Supports both Effect 3.x and 4.x codebases.
 ---
 
 # EffectTS Master Skill
 
-**Effect version target:** 4.x — barrel imports from `effect`, no separate `@effect/schema` package.
+**Adaptive for Effect 3.x and 4.x** — automatically detects version and applies appropriate rules.
+
+## Step 1: Detect Effect Version
+
+Before any operation, detect the project's Effect version:
+
+```bash
+node -p "require('./package.json').dependencies.effect || require('./package.json').devDependencies.effect || 'unknown'"
+```
+
+| Version | Rules |
+|---------|-------|
+| **4.x** | `ServiceMap.Service`, `Schema.TaggedErrorClass`, barrel imports from `effect` |
+| **3.x** | `Effect.Service`, `Data.TaggedError`, `Brand.nominal`, `Context.Tag` allowed |
+| **Unknown** | Default to 4.x rules, note uncertainty in output |
+
+## Step 2: Environment Preflight
+
+Run diagnostics commands in this priority order:
+
+```bash
+# 1. Local binary (best - no network, no mutation)
+command -v effect-language-service && effect-language-service diagnostics --project tsconfig.json --format json && exit
+
+# 2. Package manager exec (respects lockfile)
+[ -f pnpm-lock.yaml ] && pnpm exec @effect/language-service diagnostics --project tsconfig.json --format json && exit
+[ -f bun.lock ] && bun node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json --format json && exit
+npm exec @effect/language-service diagnostics --project tsconfig.json --format json && exit
+
+# 3. bunx (may download, may mutate lockfile)
+bunx @effect/language-service diagnostics --project tsconfig.json --format json
+```
+
+**Preflight health check:**
+```bash
+node -v || echo "Node: MISSING"
+bun -v || echo "Bun: NOT FOUND"
+command -v effect-language-service && echo "LSP: AVAILABLE" || echo "LSP: NOT FOUND"
+```
 
 ## Prerequisites
 
-Before using this skill, install the required tools:
-
-### Required: effect-solutions CLI
-Canonical pattern reference for Effect best practices:
+### effect-solutions CLI (recommended)
+Canonical pattern reference:
 ```bash
 bun add -g effect-solutions
-```
-Then clone the reference implementations:
-```bash
 git clone --depth 1 https://github.com/Effect-TS/effect-smol.git ~/.local/share/effect-solutions/effect
+effect-solutions list
 ```
-Verify: `effect-solutions list`
 
-### Required: Context7 MCP
-For authoritative Effect API documentation (auto-configured in Claude Code):
+### Context7 MCP (auto-configured)
 ```bash
-# Verify MCP is configured:
-claude mcp list
-# Expected: context7 (or restart Claude Code to enable)
+claude mcp list  # Expected: context7
 ```
 
 ## Task Router
 
 | Task | User says | Action |
 |------|-----------|--------|
-| **Build/scaffold/refactor** | "build a service", "add a new layer", "scaffold an Effect app", "implement this feature" | Primary Mode — see `references/service-architecture.md` |
-| **Explain/mental model** | "explain Effect.gen", "how does Layer work", "what is yield*", "help me understand" | See `references/mental-models.md` |
-| **Debug** | "debug this error", "why is this failing", "fix the type error", "what's wrong with this code" | See `references/debugging-patterns.md` |
-| **Review/audit** | "review this code", "check if this is idiomatic", "audit this", "is this correct Effect" | 12-point pipeline — see `references/code-review.md` |
-| **Setup** | "setup LSP", "install Effect tools", "configure the language server" | Prerequisites above + run `scripts/setup-lsp.sh` |
+| **Build/scaffold/refactor** | "build a service", "add a new layer", "scaffold an Effect app" | See `references/service-architecture.md` |
+| **Explain/mental model** | "explain Effect.gen", "how does Layer work", "what is yield*" | See `references/mental-models.md` |
+| **Debug** | "debug this error", "why is this failing", "fix the type error" | See `references/debugging-patterns.md` |
+| **Review/audit** | "review this code", "audit this", "is this idiomatic" | 12-point pipeline — see `references/code-review.md` |
+| **Setup** | "setup LSP", "install Effect tools" | Run `scripts/setup-lsp.sh` |
 
 ---
 
@@ -46,7 +76,7 @@ claude mcp list
 
 ### Match the Prompt Before Writing Code
 
-Before generating code, state the interpretation: *"I'll build [Y] from your prompt about [X]. If you meant [Z], please clarify."*
+State interpretation before coding: *"I'll build [Y] from your prompt about [X]. If you meant [Z], please clarify."*
 
 ### Canonical Six-Step Pattern
 
@@ -56,103 +86,69 @@ Interface → ServiceMap.Service → Layer.effect + Effect.fn → Layer.provide 
 
 **Full pattern in `references/service-architecture.md`**
 
-### Quality Verification (HARD-GATE)
+### Quality Verification (Adaptive)
 
 ```
 1. Write file
-2. bunx @effect/language-service diagnostics --file FILE --format json
-3. Quick fixes: bunx @effect/language-service quickfixes --file FILE --code DIAG_CODE
+2. Run LSP diagnostics (see adaptive command selection above)
+3. Quick fixes: effect-language-service quickfixes --file FILE --code DIAG_CODE
 4. Re-verify (max 3 iterations)
-5. bunx tsc --noEmit
-6. bunx vitest run TEST_FILE --reporter=verbose
-7. Present with verification status
+5. Run typecheck: tsc --noEmit
+6. Run tests: vitest run TEST_FILE --reporter=verbose
+7. Present verification status with failure categorization
 ```
 
-**floatingEffect fix:** `bunx @effect/language-service quickfixes --file FILE --code floatingEffect`
+**floatingEffect fix:** `effect-language-service quickfixes --file FILE --code floatingEffect`
 
-### Correct Imports
+### Version-Aware Anti-Patterns
 
+| Version | Anti-Pattern | Fix |
+|---------|-------------|-----|
+| **Both** | `throw new Error()` in Effect.gen | `return yield* Effect.fail(new MyError(...))` |
+| **Both** | `Effect.runPromise` in a service | `yield*` the effect instead |
+| **Both** | `console.log` (global) | `yield* Console.log(...)` or `yield* Effect.logInfo(...)` |
+| **Both** | `process.env.KEY` | `Config.string("KEY")` inside Effect |
+| **Both** | Missing `yield*` | Always `yield*` or `return yield*` |
+| **4.x** | `Context.Tag`, `Context.GenericTag` | Use `ServiceMap.Service<Service, Interface>()("@app/Name")` |
+| **4.x** | `Layer.provide` with array | Use variadic: `Layer.provide(effect, layer1, layer2, ...)` |
+| **3.x** | `Effect.Service` without context tag | Use `Context.Tag` for v3 services |
+| **3.x** | `Data.TaggedError` without Schema | Consider `Schema.TaggedErrorClass` for v4 migration |
+
+**Effect 4.x migration notes** (flag for v3 codebases as future guidance, not defects):
+- `ServiceMap.Service` replaces `Effect.Service`
+- `Schema.TaggedErrorClass` replaces `Data.TaggedError`
+- `Schema.brand` with `withStatics` replaces `Brand.nominal`
+- Barrel imports from `effect` replace `@effect/schema`, `@effect/io`
+
+**Logging inside Effect.gen:**
 ```ts
-import { Effect, Layer, Schema } from "effect"           // CORRECT — barrel
-import { makeRuntime } from "@effect/platform"          // CORRECT
-// WRONG: @effect/schema (deprecated), subpath imports
-```
-
-### Key Anti-Patterns (MUST NOT appear in any output)
-
-| Anti-Pattern | Fix |
-|-------------|-----|
-| `Context.Tag`, `Context.GenericTag` | FORBIDDEN in v4 — use `ServiceMap.Service<Service, Interface>()("@app/Name")` |
-| `throw new Error()` in Effect.gen | `return yield* Effect.fail(new MyError(...))` |
-| `Effect.runPromise` in a service | `yield*` the effect instead |
-| `console.log` (global) | `yield* Console.log(...)` or `yield* Effect.logInfo(...)` |
-| `process.env.KEY` | `Config.string("KEY")` inside Effect |
-| Missing `yield*` | Always `yield*` or `return yield*` |
-| `Layer.provide` with array argument | `Layer.provide(effect, layer1, layer2, ...)` — variadic, NOT `[layers]` |
-| Service method without `Effect.fn` | Wrap in `Effect.fn("Service.method")(function* (...) { ... })` |
-
-**Detailed explanations:** See `references/patterns-catalog.md`
-
-> **CRITICAL:** `Context.Tag` is FORBIDDEN in Effect 4.x. Every occurrence is a bug. Do not suggest it, do not use it in examples, do not mention it as acceptable. Only `ServiceMap.Service` is correct.
-
-**Logging inside Effect.gen — use `Console.log` for simple output, `Effect.logInfo` for structured fields:**
-```ts
-// ✅ CORRECT — Console.log is the Effect 4.x canonical way
+// ✅ CORRECT — Console.log (Effect 4.x canonical)
 yield* Console.log("User created")
 
-// ❌ WRONG — console.log is the Node.js global (outside Effect system)
+// ❌ WRONG — global console
 console.log("User created")
 ```
-See `references/observability.md` for structured logging with `Effect.logInfo` for production observability.
-
-### Branded Types & Errors
-
-**⚠️ FORBIDDEN — Manual `Brand` constructor without `withStatics`:**
-```ts
-// ❌ WRONG — no withStatics
-import { Schema, Brand } from "effect"
-type UserId = Brand<string, "UserId">
-const UserIdSchema = Schema.String.pipe(Schema.nonEmpty(), Schema.brand("UserId"))
-
-// ✅ CORRECT — Schema.brand + withStatics
-import { Schema, withStatics } from "effect"
-export const UserID = Schema.String.pipe(
-  Schema.brand("UserID"),
-  withStatics((s) => ({
-    make: (id: string) => s.makeUnsafe(id),
-    isValid: (t: unknown): t is Schema.Schema.Type<typeof UserID> => typeof t === "string" && t.length > 0,
-  })),
-)
-export type UserID = Schema.Schema.Type<typeof UserID>
-```
-See `references/schema-data-modeling.md` for full patterns.
 
 ### Effect-Docs MCP
 
-For uncertain APIs, use the Context7 MCP (see `references/effect-docs.md` for usage):
-1. Resolve library: `mcp__context7__resolve-library-id` with `effect-ts` or `Effect-TS`
-2. Query docs: `mcp__context7__query-docs` with the resolved library ID
-
-**Fallback when MCP unavailable:** Use `bunx @effect/language-service diagnostics` for local API verification, or browse https://effect.website/docs for canonical patterns.
+For uncertain APIs:
+1. Resolve: `mcp__context7__resolve-library-id` with `effect-ts` or `Effect-TS`
+2. Query: `mcp__context7__query-docs` with the resolved ID
 
 ---
 
 ## Code Review
 
-Trigger: `review`, `audit`, `check code`, `idiomatic`
+**Trigger:** `review`, `audit`, `check code`, `idiomatic`
 
-**HARD-GATE: Run all 12 checks. No skipping.**
+Full 12-point pipeline in `references/code-review.md`. The pipeline is version-aware — v3 and v4 patterns are reviewed differently.
 
-Full pipeline in `references/code-review.md`
-
----
-
-## Keep It Lean
-
-**HARD RULES:**
-1. ❌ NO `package-lock.json`, `bun.lock`, `node_modules/`
-2. ❌ NO `Console.log` or `console.log` inside Effect.gen — use `yield* Effect.logInfo(...)` instead
-3. ❌ NO `Effect.runPromise` inside services
+**Validation failure categories** (report in output):
+- **Toolchain failure** — command didn't run (missing deps, broken Node/Bun)
+- **Product type failure** — command ran, code has type errors
+- **Product test failure** — command ran, tests failed
+- **External dependency unavailable** — service unavailable, skipped
+- **Version mismatch** — v3/v4 rule flagged for future migration, not defect
 
 ---
 
@@ -160,8 +156,8 @@ Full pipeline in `references/code-review.md`
 
 | File | Purpose |
 |------|---------|
-| `references/service-architecture.md` | 6-step pattern, Layer composition |
-| `references/schema-data-modeling.md` | Branded types, TaggedErrorClass |
+| `references/service-architecture.md` | 6-step pattern, Layer composition (v3 + v4) |
+| `references/schema-data-modeling.md` | Branded types, TaggedErrorClass (v3 + v4) |
 | `references/debugging-patterns.md` | floatingEffect, missing layers |
 | `references/patterns-catalog.md` | Concurrency, streams, HTTP |
 | `references/observability.md` | Effect.fn tracing, logging |
