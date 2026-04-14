@@ -2,6 +2,8 @@
 
 Step-by-step workflows for diagnosing and fixing common Effect-TS issues.
 
+**Version-aware:** These patterns cover both v3 and v4. The correct pattern depends on your project's Effect version.
+
 ## Quick Index
 
 | # | Problem | Symptom |
@@ -19,6 +21,7 @@ Step-by-step workflows for diagnosing and fixing common Effect-TS issues.
 | [11. Error Accumulation](#11-error-accumulation-parallel-operations) | Partial failures lost | Only first error reported |
 | [12. match vs matchTag vs matchEffect](#12-match-vs-matchtag-vs-matcheffect--when-to-use-which) | Error handler confusion | Wrong handler for the situation |
 | [13. Runtime vs Provide](#13-runtime-vs-provide--when-to-use-which) | Runtime choice | Which runtime pattern to use |
+| [14. v3 Context.Tag Issues](#14-contexttag-issues-v3-only) | v3 service pattern issues | `Context.Tag` usage problems |
 | [General Debugging Toolkit](#general-debugging-toolkit) | Spans, logging, Cause inspection | Visibility into running Effects |
 
 ## 1. Missing Service / Layer Not Provided
@@ -34,7 +37,7 @@ Type 'Effect<User, Error, Database>' is not assignable to type 'Effect<User, Err
 2. Trace backward to find where `Layer.provide` should wire it in
 3. Check if the Layer exists but isn't composed into the final stack
 
-**Fix (canonical Effect 4.x — ServiceMap.Service + Layer.provide):**
+**Fix (Effect 4.x — ServiceMap.Service pattern):**
 ```ts
 import { ServiceMap } from "effect"
 
@@ -44,14 +47,29 @@ const fullLayer = layer.pipe(
 )
 ```
 
-> **Legacy note:** `Context.Tag` is **FORBIDDEN** in Effect 4.x — it must never appear in new or migrated code. `Effect.Service` is legacy-compatible only. Use `ServiceMap.Service` + `Layer.provide` as the only canonical pattern.
-
-**`Layer.provide` API — variadic arguments, NOT an array:**
+**Fix (Effect 3.x — Context.Tag pattern):**
 ```ts
-// WRONG — array argument
+import { Context } from "effect"
+
+// Make sure tag is provided in the layer
+const fullLayer = Layer.provide(
+  UserServiceLayer,
+  DatabaseLayer,  // DatabaseService.Service tag must be provided
+)
+```
+
+**`Layer.provide` API differs by version:**
+
+| Version | API |
+|---------|-----|
+| **v4** | Variadic: `Layer.provide(mainLayer, dep1, dep2)` |
+| **v3** | Array: `Layer.provide([dep1, dep2], mainLayer)` |
+
+```ts
+// v4 WRONG — array argument
 Effect.runPromise(program.pipe(Layer.provide([layerA, layerB])))
 
-// CORRECT — variadic
+// v4 CORRECT — variadic
 Effect.runPromise(program.pipe(Layer.provide(layerA, layerB)))
 
 // For a dynamic list, use Layer.mergeAll first
@@ -156,15 +174,34 @@ const ALayer = Layer.unwrap(
 ## 7. "Effect is not a function" / Wrong Import
 
 **Diagnosis:**
-- In Effect 4.x, most things import from `"effect"` barrel:
-  ```ts
-  import { Effect, Layer, Schema, Stream } from "effect"
-  ```
-- Some platform-specific modules use deep imports:
-  ```ts
-  import * as FileSystem from "effect/FileSystem"
-  ```
-- **Use the effect-docs MCP** (`effect_docs_search`) to verify the current API surface
+
+**Effect 4.x** — Most things import from `"effect"` barrel:
+```ts
+import { Effect, Layer, Schema, Stream } from "effect"
+```
+
+**Effect 3.x** — Separate packages:
+```ts
+import { Effect, Context, Layer } from "@effect/io"
+import { Schema, Brand, Data } from "@effect/schema"
+```
+
+Some platform-specific modules use deep imports:
+```ts
+import * as FileSystem from "effect/FileSystem"
+```
+
+**Migration:** If upgrading from v3 to v4, consolidate imports:
+```bash
+# Find old imports
+grep -r "@effect/io\|@effect/schema" src/
+
+# Replace with
+sed -i '' 's/@effect\/io/effect/g' src/**/*.ts
+sed -i '' 's/@effect\/schema/effect/g' src/**/*.ts
+```
+
+**Use the effect-docs MCP** to verify the current API surface for your version.
 
 ## 8. Unhandled Defect (Die)
 
@@ -418,3 +455,98 @@ yield* Effect.scope(scope => Effect.gen(function* () {
 - Explicit scope management for complex scenarios
 - `addFinalizer` for cleanup on scope close
 - Best for: integration with external lifecycle systems
+
+## 14. Context.Tag Issues (v3 only)
+
+**Symptom:** `Context.Tag` not found, service access fails, or type errors involving `Context.Tag`.
+
+This issue only affects Effect v3 codebases. In v4, `Context.Tag` is replaced by `ServiceMap.Service`.
+
+### Missing Tag Declaration
+
+**Symptom:** `Property 'X' is not assignable to type 'never'` or tag not found in Context.
+
+**Diagnosis:**
+```ts
+// Make sure tag is declared BEFORE use
+export const DatabaseServiceTag = Context.Tag<DatabaseService.Service>("@app/DatabaseService")
+
+// Use the tag consistently
+yield* DatabaseServiceTag // NOT yield* DatabaseService.Service
+```
+
+### Tag String Format
+
+**Symptom:** Service resolution fails silently or returns wrong service.
+
+**Fix:** Tags must follow `@scope/Name` format:
+```ts
+// Correct
+Context.Tag<Service>("@myapp/UserService")
+Context.Tag<Service>("@company/CacheService")
+
+// Wrong - missing @ or /
+Context.Tag<Service>("UserService")  // Will fail
+Context.Tag<Service>("myapp/UserService")  // Will fail
+```
+
+### Service Provider Not Wired
+
+**Symptom:** `Context is missing tags` error at runtime.
+
+**Diagnosis:**
+```ts
+// In your layer composition - make sure to provide all required tags
+const AppLayer = Layer.provide(
+  UserServiceLayer,
+  DatabaseLayer,  // DatabaseServiceTag must be provided
+)
+```
+
+### v3 Service Pattern Reference
+
+```ts
+import { Effect, Context, Layer } from "effect"
+
+// Define the service interface
+export namespace DatabaseService {
+  export interface Service {
+    readonly query: <R>(sql: string) => Effect.Effect<QueryResult, DatabaseError, R>
+    readonly execute: <R>(sql: string) => Effect.Effect<void, DatabaseError, R>
+  }
+
+  // Declare the tag
+  export const Service = Context.Tag<Service>("@app/DatabaseService")
+}
+
+// Implement the service
+export const DatabaseServiceLive = Layer.effect(
+  DatabaseService.Service,
+  Effect.gen(function* () {
+    const pool = yield* getPool()
+    return DatabaseService.Service.of({
+      query: (sql) => executeQuery(pool, sql),
+      execute: (sql) => executeWrite(pool, sql),
+    })
+  })
+)
+
+// Consume the service
+const result = yield* DatabaseService.Service
+```
+
+### Layer.provide Array vs Variadic (v3 vs v4)
+
+**v3 pattern:**
+```ts
+// Array form (v3)
+Layer.provide([DatabaseLayer, CacheLayer], UserServiceLayer)
+```
+
+**v4 pattern:**
+```ts
+// Variadic form (v4) — array is NOT supported
+Layer.provide(UserServiceLayer, DatabaseLayer, CacheLayer)
+```
+
+If migrating from v3 to v4, convert array form to variadic arguments.

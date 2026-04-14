@@ -1,11 +1,11 @@
 ---
 name: effect
-description: This skill should be used when the user asks to "build a service", "add a layer", "scaffold an Effect project", "debug this error", "fix this type error", "explain Effect.gen", "why is this failing", "review this Effect code", "add error handling", or needs help with Effect-TS patterns (ServiceMap.Service, Effect.Service, Layer.provide, Effect.fn, Schema.decodeUnknown, TaggedErrorClass, Effect.log). Supports both Effect 3.x and 4.x codebases.
+description: This skill should be used when the user asks to "build a service", "add a layer", "scaffold an Effect project", "debug this error", "fix this type error", "explain Effect.gen", "why is this failing", "review this Effect code", "add error handling", "migrate from v3 to v4", "upgrade effect", or needs help with Effect-TS patterns (ServiceMap.Service, Context.Tag, Layer.provide, Effect.fn, Schema.decodeUnknown, TaggedErrorClass, Data.TaggedError, Effect.log). Supports both Effect 3.x and 4.x codebases.
 ---
 
 # EffectTS Master Skill
 
-**Adaptive for Effect 3.x and 4.x** — automatically detects version and applies appropriate rules.
+**Version-aware** — automatically detects Effect 3.x or 4.x and applies the appropriate patterns. Both versions are production-ready; v4 is the current modern approach while v3 remains stable.
 
 ## Step 1: Detect Effect Version
 
@@ -15,11 +15,13 @@ Before any operation, detect the project's Effect version:
 node -p "require('./package.json').dependencies.effect || require('./package.json').devDependencies.effect || 'unknown'"
 ```
 
-| Version | Rules |
-|---------|-------|
-| **4.x** | `ServiceMap.Service`, `Schema.TaggedErrorClass`, barrel imports from `effect` |
-| **3.x** | `Effect.Service`, `Data.TaggedError`, `Brand.nominal`, `Context.Tag` allowed |
-| **Unknown** | Default to 4.x rules, note uncertainty in output |
+| Version | Primary Patterns | Import |
+|---------|-----------------|--------|
+| **4.x** (current) | `ServiceMap.Service`, `Schema.TaggedErrorClass`, `Schema.brand` with `withStatics` | `effect` (barrel) |
+| **3.x** (legacy) | `Context.Tag`, `Data.TaggedError`, `Brand.nominal` | `@effect/io`, `@effect/schema` |
+| **Unknown** | Apply v4 patterns as current, note uncertainty in output |
+
+**Both versions are production-ready.** Choose the pattern that matches your project's Effect version.
 
 ## Step 2: Environment Preflight
 
@@ -91,10 +93,11 @@ claude mcp list  # Expected: context7
 
 | Task | User says | Action |
 |------|-----------|--------|
-| **Build/scaffold/refactor** | "build a service", "add a new layer", "scaffold an Effect app" | See `references/service-architecture.md` |
+| **Build/scaffold/refactor** | "build a service", "add a new layer", "scaffold an Effect app" | See `references/service-architecture.md` (v3 + v4 patterns) |
 | **Explain/mental model** | "explain Effect.gen", "how does Layer work", "what is yield*" | See `references/mental-models.md` |
-| **Debug** | "debug this error", "why is this failing", "fix the type error" | See `references/debugging-patterns.md` |
-| **Review/audit** | "review this code", "audit this", "is this idiomatic" | 12-point pipeline — see `references/code-review.md` |
+| **Debug** | "debug this error", "why is this failing", "fix the type error" | See `references/debugging-patterns.md` (v3 + v4 patterns) |
+| **Review/audit** | "review this code", "audit this", "is this idiomatic" | 12-point pipeline — see `references/code-review.md` (v3 + v4) |
+| **Migrate** | "migrate from v3 to v4", "upgrade effect", "convert to v4" | See `references/migration-v3-v4.md` |
 | **Setup** | "setup LSP", "install Effect tools" | Run `scripts/setup-lsp.sh` |
 
 ---
@@ -129,6 +132,8 @@ Interface → ServiceMap.Service → Layer.effect + Effect.fn → Layer.provide 
 
 ### Version-Aware Anti-Patterns
 
+Apply the pattern that matches your project's Effect version:
+
 | Version | Anti-Pattern | Fix |
 |---------|-------------|-----|
 | **Both** | `throw new Error()` in Effect.gen | `return yield* Effect.fail(new MyError(...))` |
@@ -136,13 +141,14 @@ Interface → ServiceMap.Service → Layer.effect + Effect.fn → Layer.provide 
 | **Both** | `console.log` (global) | `yield* Console.log(...)` or `yield* Effect.logInfo(...)` |
 | **Both** | `process.env.KEY` | `Config.string("KEY")` inside Effect |
 | **Both** | Missing `yield*` | Always `yield*` or `return yield*` |
-| **4.x** | `Context.Tag`, `Context.GenericTag` | Use `ServiceMap.Service<Service, Interface>()("@app/Name")` |
+| **4.x** | `Context.Tag` | Use `ServiceMap.Service<Service, Interface>()("@app/Name")` |
 | **4.x** | `Layer.provide` with array | Use variadic: `Layer.provide(effect, layer1, layer2, ...)` |
-| **3.x** | `Effect.Service` without context tag | Use `Context.Tag` for v3 services |
-| **3.x** | `Data.TaggedError` without Schema | Consider `Schema.TaggedErrorClass` for v4 migration |
+| **3.x** | `ServiceMap.Service` | Use `Context.Tag<Service>("@app/Name")` for v3 |
+| **3.x** | `Schema.TaggedErrorClass` | Use `Data.TaggedError` for v3 |
 
-**Effect 4.x migration notes** (flag for v3 codebases as future guidance, not defects):
-- `ServiceMap.Service` replaces `Effect.Service`
+**Migration guidance** (for users who want to upgrade from v3 to v4):
+- See `references/migration-v3-v4.md` for detailed migration steps
+- `ServiceMap.Service` replaces `Context.Tag`
 - `Schema.TaggedErrorClass` replaces `Data.TaggedError`
 - `Schema.brand` with `withStatics` replaces `Brand.nominal`
 - Barrel imports from `effect` replace `@effect/schema`, `@effect/io`
@@ -185,10 +191,11 @@ Full 12-point pipeline in `references/code-review.md`. The pipeline is version-a
 |------|---------|
 | `references/service-architecture.md` | 6-step pattern, Layer composition (v3 + v4) |
 | `references/schema-data-modeling.md` | Branded types, TaggedErrorClass (v3 + v4) |
-| `references/debugging-patterns.md` | floatingEffect, missing layers |
+| `references/debugging-patterns.md` | floatingEffect, missing layers (v3 + v4) |
 | `references/patterns-catalog.md` | Concurrency, streams, HTTP |
 | `references/observability.md` | Effect.fn tracing, logging |
 | `references/testing-guide.md` | @effect/vitest, TestClock |
-| `references/code-review.md` | 12-point review pipeline |
+| `references/code-review.md` | 12-point review pipeline (v3 + v4) |
 | `references/lsp-integration.md` | CLI commands, quickfixes |
+| `references/migration-v3-v4.md` | **NEW** - v3 to v4 migration guide |
 | `scripts/setup-lsp.sh` | LSP installation |
